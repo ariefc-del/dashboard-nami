@@ -22,9 +22,34 @@ export default function App() {
   const [error, setError] = useState(null)
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth())
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
+  const [realtimeStatus, setRealtimeStatus] = useState('connecting')
 
   useEffect(() => {
     fetchAll()
+
+    // Supabase Realtime subscription
+    const channel = supabase
+      .channel('transaksi-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'transaksi' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            setAllTransactions(prev => [payload.new, ...prev])
+          } else if (payload.eventType === 'DELETE') {
+            setAllTransactions(prev => prev.filter(t => t.id !== payload.old.id))
+          } else if (payload.eventType === 'UPDATE') {
+            setAllTransactions(prev => prev.map(t => t.id === payload.new.id ? payload.new : t))
+          }
+        }
+      )
+      .subscribe((status) => {
+        setRealtimeStatus(status === 'SUBSCRIBED' ? 'live' : 'connecting')
+      })
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [])
 
   async function fetchAll() {
@@ -110,24 +135,40 @@ export default function App() {
             </p>
           </div>
         </div>
-        <button
-          onClick={fetchAll}
-          style={{
-            background: 'rgba(255,255,255,0.15)',
-            border: '1px solid rgba(255,255,255,0.3)',
-            color: 'white',
-            padding: '8px 18px',
-            borderRadius: 8,
-            cursor: 'pointer',
-            fontSize: 13,
-            fontWeight: 600,
-            transition: 'background 0.2s'
-          }}
-          onMouseOver={e => e.target.style.background = 'rgba(255,255,255,0.25)'}
-          onMouseOut={e => e.target.style.background = 'rgba(255,255,255,0.15)'}
-        >
-          🔄 Refresh
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            background: 'rgba(255,255,255,0.1)',
+            padding: '6px 12px', borderRadius: 20,
+            fontSize: 12, fontWeight: 600
+          }}>
+            <span style={{
+              width: 8, height: 8, borderRadius: '50%',
+              background: realtimeStatus === 'live' ? '#2ecc71' : '#f39c12',
+              boxShadow: realtimeStatus === 'live' ? '0 0 6px #2ecc71' : 'none',
+              animation: realtimeStatus === 'live' ? 'pulse 2s infinite' : 'none',
+              display: 'inline-block'
+            }} />
+            {realtimeStatus === 'live' ? 'Live' : 'Connecting...'}
+          </div>
+          <button
+            onClick={fetchAll}
+            style={{
+              background: 'rgba(255,255,255,0.15)',
+              border: '1px solid rgba(255,255,255,0.3)',
+              color: 'white',
+              padding: '8px 18px',
+              borderRadius: 8,
+              cursor: 'pointer',
+              fontSize: 13,
+              fontWeight: 600,
+            }}
+            onMouseOver={e => e.target.style.background = 'rgba(255,255,255,0.25)'}
+            onMouseOut={e => e.target.style.background = 'rgba(255,255,255,0.15)'}
+          >
+            🔄 Refresh
+          </button>
+        </div>
       </header>
 
       <main style={{ maxWidth: 1200, margin: '0 auto', padding: '28px 24px' }}>
